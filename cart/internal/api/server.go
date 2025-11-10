@@ -44,6 +44,5 @@ func (s *Server) CartRoute(cartservice *service.CartService) {
 	cartHandler := restapi.NewCartHandler(cartservice)
 
 	s.r.HandleFunc("/cart", cartHandler.CreateCart).Methods("POST")
-	s.r.HandleFunc("/cart", cartHandler.GetAllCarts).Methods("GET")
-	s.r.HandleFunc("/cart/{cart_id}", cartHandler.GetCartById).Methods("GET")
+	s.r.HandleFunc("/cart/{user_id}", cartHandler.FindCartByUserID).Methods("POST")
 }
