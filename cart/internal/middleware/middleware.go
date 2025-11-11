@@ -2,69 +2,89 @@ package middleware
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/sachinggsingh/e-comm/internal/config"
+	"github.com/sachinggsingh/e-comm/internal/errors"
 )
 
-var (
-	ErrNoTokenProvided = errors.New("no token provided")
-	ErrInvalidToken    = errors.New("invalid token")
-)
+type JWTAccessClaims struct {
+	Email string `json:"email"`
+	Uid   string `json:"uid"`
+	jwt.RegisteredClaims
+}
 
-type ctxKey string
+type JWTRefreshClaims struct {
+	Uid string `json:"uid"`
+	jwt.RegisteredClaims
+}
 
-const userIDKey ctxKey = "user_id"
+type contextKey string
 
-// GetTheToken extracts the JWT from Authorization header and validates it.
-// Returns the token claims if valid.
-func GetTheToken(r *http.Request) (jwt.MapClaims, error) {
+const UserIDKey contextKey = "uid"
+
+// GetTheToken extracts and validates the JWT token.
+func GetTheToken(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return nil, ErrNoTokenProvided
+		return "", errors.ErrNoTokenProvided
 	}
 
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return nil, ErrInvalidToken
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return "", errors.ErrInvalidToken
 	}
 
-	tokenString := parts[1]
+	return strings.TrimPrefix(authHeader, "Bearer "), nil
+}
+func ValidateToken(tokenString string) (*JWTAccessClaims, error) {
+	claims := &JWTAccessClaims{}
 
-	env := config.SetEnv()
-
-	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-		return []byte(env.APP_SECRET), nil
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
+		return []byte(config.SetEnv().APP_SECRET), nil
 	})
-
 	if err != nil || !token.Valid {
-		return nil, ErrInvalidToken
+		return nil, errors.ErrInvalidToken
 	}
+	if claims.Uid == "" {
+		return nil, errors.DifferentTokenUsed
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, ErrInvalidToken
 	}
-
 	return claims, nil
 }
 
+// Middleware: Inject user_id into request context
 func GetUserIdFromToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, err := GetTheToken(r)
+
+		tokenString, err := GetTheToken(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
-		userID, ok := claims["user_id"].(string)
-		if !ok || userID == "" {
-			http.Error(w, "user_id claim missing or invalid", http.StatusUnauthorized)
+
+		// ✅ Validate ACCESS TOKEN properly
+		claims, err := ValidateToken(tokenString)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
+
+		fmt.Println("Authenticated User:", claims)
+
+		// Now we know it's a valid ACCESS token
+		userID := claims.Uid
+		if userID == "" {
+			http.Error(w, "Invalid access token: uid missing", http.StatusUnauthorized)
+			return
+		}
+		fmt.Println("Authenticated User:", userID)
+
+		// Inject UID in context
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

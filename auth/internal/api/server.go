@@ -52,7 +52,7 @@ func (s *Server) UserRoutes(userService *service.UserService) {
 	// })
 
 	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
-		_, err := helper.Authorize(r, r.URL.Query().Get("user_id"))
+		_, err := helper.Authorize(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return

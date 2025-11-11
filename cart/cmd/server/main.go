@@ -6,6 +6,8 @@ import (
 	restapi "github.com/sachinggsingh/e-comm/internal/api"
 	"github.com/sachinggsingh/e-comm/internal/config"
 	"github.com/sachinggsingh/e-comm/internal/intra/db"
+	"github.com/sachinggsingh/e-comm/internal/repository"
+	"github.com/sachinggsingh/e-comm/internal/service"
 )
 
 func main() {
@@ -18,5 +20,8 @@ func main() {
 	defer database.Disconnect()
 
 	server := restapi.NewServer(env, database)
+	repo := repository.NewCartRepository(database)
+	cartService := service.NewCartService(repo)
+	server.CartRoute(cartService)
 	server.StartServer()
 }

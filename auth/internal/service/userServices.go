@@ -39,14 +39,14 @@ func (u *UserService) RegisterUser(user *model.User) error {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	now := time.Now()
+	user.ID = primitive.NewObjectID()
+	user.User_id = user.ID.Hex()
+
 	token, refreshToken, err := helper.GenerateToken(user.User_id, *user.Email)
 	if err != nil {
 		return fmt.Errorf("failed to generate token: %w", err)
 	}
-
-	now := time.Now()
-	user.ID = primitive.NewObjectID()
-	user.User_id = user.ID.Hex()
 
 	newUser := &model.User{
 		ID:            user.ID,
@@ -77,7 +77,7 @@ func (u *UserService) LoginUser(user *model.User) (*model.User, error) {
 	if !isPasswordOk {
 		return nil, errors.New("password is incorrect")
 	}
-	token, refreshToken, err := helper.GenerateToken(user.User_id, *user.Email)
+	token, refreshToken, err := helper.GenerateToken(storedUser.User_id, *storedUser.Email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}

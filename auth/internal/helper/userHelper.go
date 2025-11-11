@@ -2,7 +2,9 @@ package helper
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -10,9 +12,14 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type JWT struct {
-	Email string
-	Uid   string
+type JWTAccessClaims struct {
+	Email string `json:"email"`
+	Uid   string `json:"uid"`
+	jwt.RegisteredClaims
+}
+
+type JWTRefreshClaims struct {
+	Uid string `json:"uid"`
 	jwt.RegisteredClaims
 }
 
@@ -22,14 +29,15 @@ var (
 )
 
 func GenerateToken(id string, email string) (string, string, error) {
-	tokenclaims := &JWT{
+	tokenclaims := &JWTAccessClaims{
 		Email: email,
 		Uid:   id,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(24 * time.Hour)),
 		},
 	}
-	refreshTokenClaims := &JWT{
+	refreshTokenClaims := &JWTRefreshClaims{
+		Uid: id,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Local().Add(24 * time.Hour)),
 		},
@@ -45,41 +53,41 @@ func GenerateToken(id string, email string) (string, string, error) {
 	return tokenString, refreshTokenString, nil
 }
 
-func ValidateToken(token string) (*JWT, error) {
-	tokenClaims := &JWT{}
-	_, err := jwt.ParseWithClaims(token, tokenClaims, func(t *jwt.Token) (any, error) {
-		return []byte(config.GetEnv().APP_SECRET), nil
-	})
-	if err != nil {
-		return nil, ErrInvalidToken
-	}
-	return tokenClaims, err
-}
+func ValidateToken(tokenString string) (*JWTAccessClaims, error) {
+	claims := &JWTAccessClaims{}
 
-func Authorize(r *http.Request, userid string) (string, error) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", ErrInvalidToken
-	}
-
-	const bearerPrefix = "Bearer "
-	if len(authHeader) < len(bearerPrefix) || authHeader[:len(bearerPrefix)] != bearerPrefix {
-		return "", ErrInvalidToken
-	}
-
-	tokenString := authHeader[len(bearerPrefix):]
-
-	claims := &JWT{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 		return []byte(config.GetEnv().APP_SECRET), nil
 	})
 	if err != nil || !token.Valid {
-		return "", ErrInvalidToken
+		return nil, ErrInvalidToken
 	}
-	if claims.Uid != userid {
-		return "", ErrInvalidToken
+	if claims.Uid == "" {
+		return nil, errors.New("uid missing: likely refresh token used instead of access token")
+
 	}
-	return claims.Uid, nil
+	return claims, nil
+}
+func Authorize(r *http.Request) (*JWTAccessClaims, error) {
+	authHeader := r.Header.Get("Authorization")
+
+	if authHeader == "" {
+		return nil, ErrInvalidToken
+	}
+
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return nil, ErrInvalidToken
+	}
+
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+	claims, err := ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("Authenticated User:", claims.Uid)
+	return claims, nil
 }
 
 func HashPassword(password string) (string, error) {

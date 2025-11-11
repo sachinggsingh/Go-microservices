@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/sachinggsingh/e-comm/internal/helper"
@@ -65,12 +66,13 @@ func (u *UserHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User id is required", http.StatusBadRequest)
 		return
 	}
-	userID, err := helper.Authorize(r, userIDFromRequest)
+	userID, err := helper.Authorize(r)
 	if err != nil {
 		http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
-	user := &model.User{User_id: userID}
+	fmt.Println("Authenticated User:", userID.Uid)
+	user := &model.User{User_id: userIDFromRequest}
 	result, err := u.userService.Profile(user)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {

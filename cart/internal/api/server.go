@@ -9,6 +9,7 @@ import (
 	"github.com/sachinggsingh/e-comm/internal/api/restapi"
 	"github.com/sachinggsingh/e-comm/internal/config"
 	"github.com/sachinggsingh/e-comm/internal/intra/db"
+	"github.com/sachinggsingh/e-comm/internal/middleware"
 	"github.com/sachinggsingh/e-comm/internal/service"
 )
 
@@ -27,22 +28,26 @@ func NewServer(env *config.Env, db *db.Database) *Server {
 }
 
 func (s *Server) StartServer() {
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello Welcome to the CartRoute"))
-	})
-
 	port := fmt.Sprintf(":%s", s.env.PORT)
 	log.Printf("Starting server on port %s\n", s.env.PORT)
 
 	if err := http.ListenAndServe(port, s.r); err != nil {
-		log.Fatalf("Failed to start server")
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
 func (s *Server) CartRoute(cartservice *service.CartService) {
 	cartHandler := restapi.NewCartHandler(cartservice)
 
-	s.r.HandleFunc("/cart", cartHandler.CreateCart).Methods("POST")
-	s.r.HandleFunc("/cart/{user_id}", cartHandler.FindCartByUserID).Methods("POST")
+	// Create cart - requires authentication
+	s.r.Handle("/cart", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.CreateCart))).Methods("POST")
+
+	// Get cart by user ID - requires authentication
+	s.r.Handle("/cart/{user_id}", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.FindCartByUserID))).Methods("GET")
+
+	// Update cart - requires authentication
+	s.r.Handle("/cart/{user_id}", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.UpdateCart))).Methods("PUT")
+
+	// Delete cart - requires authentication
+	s.r.Handle("/cart/{user_id}", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.DeleteCart))).Methods("DELETE")
 }
