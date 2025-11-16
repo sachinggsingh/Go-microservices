@@ -1,22 +1,27 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/sachinggsingh/e-comm/internal/errors"
 	"github.com/sachinggsingh/e-comm/internal/model"
+	"github.com/sachinggsingh/e-comm/internal/pkg"
 	"github.com/sachinggsingh/e-comm/internal/repository"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type CartService struct {
-	cartRepo repository.CartRepository
+	cartRepo      repository.CartRepository
+	productClient *pkg.ProductClient
 }
 
-func NewCartService(cartRepo repository.CartRepository) *CartService {
+func NewCartService(cartRepo repository.CartRepository, productClient *pkg.ProductClient) *CartService {
 	return &CartService{
-		cartRepo: cartRepo,
+		cartRepo:      cartRepo,
+		productClient: productClient,
 	}
 }
 
@@ -55,6 +60,32 @@ func validateCartItems(items []model.CartItem) error {
 	return nil
 }
 
+// ValidateProductsWithGRPC validates products exist and optionally updates prices from product service
+func (c *CartService) ValidateProductsWithGRPC(ctx context.Context, items []model.CartItem) ([]model.CartItem, error) {
+	if c.productClient == nil {
+		// If product client is not available, skip validation
+		log.Println("Product client not available, skipping product validation")
+		return items, nil
+	}
+
+	validatedItems := make([]model.CartItem, 0, len(items))
+	for _, item := range items {
+		// Validate product exists via gRPC
+		product, err := c.productClient.GetProduct(ctx, item.Product_id)
+		if err != nil {
+			return nil, fmt.Errorf("product %s validation failed: %w", item.Product_id, err)
+		}
+
+		// Use price from product service to ensure consistency
+		validatedItem := item
+		validatedItem.Price = product.Price
+		validatedItem.Total = CalculateTotal(product.Price, item.Quantity)
+		validatedItems = append(validatedItems, validatedItem)
+	}
+
+	return validatedItems, nil
+}
+
 func (c *CartService) CreateCart(userID string, items []model.CartItem) (*model.Cart, error) {
 	if userID == "" {
 		return nil, errors.ErrInvalidUserID
@@ -63,6 +94,13 @@ func (c *CartService) CreateCart(userID string, items []model.CartItem) (*model.
 	// Validate items
 	if err := validateCartItems(items); err != nil {
 		return nil, err
+	}
+
+	// Validate products via gRPC and get updated prices
+	ctx := context.Background()
+	validatedItems, err := c.ValidateProductsWithGRPC(ctx, items)
+	if err != nil {
+		return nil, fmt.Errorf("product validation failed: %w", err)
 	}
 
 	// Check if cart already exists for user
@@ -76,22 +114,21 @@ func (c *CartService) CreateCart(userID string, items []model.CartItem) (*model.
 
 	// If cart exists, add items to existing cart
 	if existingCart != nil {
-		return c.AddItemsToCart(userID, items)
+		return c.AddItemsToCart(userID, validatedItems)
 	}
 
 	// Create new cart
 	cartID := primitive.NewObjectID()
-	cartItems := make([]model.CartItem, 0, len(items))
+	cartItems := make([]model.CartItem, 0, len(validatedItems))
 
-	for _, item := range items {
+	for _, item := range validatedItems {
 		cartItemID := primitive.NewObjectID()
-		total := CalculateTotal(item.Price, item.Quantity)
 		cartItem := model.CartItem{
 			ID:          cartItemID,
 			Product_id:  item.Product_id,
 			Price:       item.Price,
 			Quantity:    item.Quantity,
-			Total:       total,
+			Total:       item.Total,
 			CartItem_id: cartItemID.Hex(),
 		}
 		cartItems = append(cartItems, cartItem)
@@ -129,6 +166,13 @@ func (c *CartService) UpdateCart(userID string, items []model.CartItem) (*model.
 		return nil, err
 	}
 
+	// Validate products via gRPC and get updated prices
+	ctx := context.Background()
+	validatedItems, err := c.ValidateProductsWithGRPC(ctx, items)
+	if err != nil {
+		return nil, fmt.Errorf("product validation failed: %w", err)
+	}
+
 	// Get existing cart
 	existingCart, err := c.cartRepo.FindCartByUserID(userID)
 	if err != nil {
@@ -136,16 +180,15 @@ func (c *CartService) UpdateCart(userID string, items []model.CartItem) (*model.
 	}
 
 	// Update items
-	cartItems := make([]model.CartItem, 0, len(items))
-	for _, item := range items {
+	cartItems := make([]model.CartItem, 0, len(validatedItems))
+	for _, item := range validatedItems {
 		cartItemID := primitive.NewObjectID()
-		total := CalculateTotal(item.Price, item.Quantity)
 		cartItem := model.CartItem{
 			ID:          cartItemID,
 			Product_id:  item.Product_id,
 			Price:       item.Price,
 			Quantity:    item.Quantity,
-			Total:       total,
+			Total:       item.Total,
 			CartItem_id: cartItemID.Hex(),
 		}
 		cartItems = append(cartItems, cartItem)
@@ -178,19 +221,24 @@ func (c *CartService) AddItemsToCart(userID string, items []model.CartItem) (*mo
 		return nil, errors.ErrInvalidUserID
 	}
 
-	// Validate items
 	if err := validateCartItems(items); err != nil {
 		return nil, err
 	}
 
-	// Get existing cart
+	// Validate products via gRPC and get updated prices
+	ctx := context.Background()
+	validatedItems, err := c.ValidateProductsWithGRPC(ctx, items)
+	if err != nil {
+		return nil, fmt.Errorf("product validation failed: %w", err)
+	}
+
 	existingCart, err := c.cartRepo.FindCartByUserID(userID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Add new items to existing items
-	for _, item := range items {
+	for _, item := range validatedItems {
 		// 	Check if product already exists in cart
 		found := false
 		for i, existingItems := range existingCart.Items {

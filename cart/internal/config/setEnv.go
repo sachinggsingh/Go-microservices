@@ -8,9 +8,10 @@ import (
 )
 
 type Env struct {
-	PORT       string
-	MONGO_URL  string
-	APP_SECRET string
+	PORT                string
+	MONGO_URL           string
+	APP_SECRET          string
+	PRODUCT_SERVICE_URL string
 }
 
 func SetEnv() *Env {
@@ -31,9 +32,14 @@ func SetEnv() *Env {
 	if appSecret == "" {
 		log.Fatalf("APP_SECRET is not set")
 	}
+	productServiceURL := os.Getenv("PRODUCT_SERVICE_URL")
+	if productServiceURL == "" {
+		productServiceURL = "localhost:9091" // Default to product service gRPC port
+	}
 	return &Env{
-		PORT:       port,
-		MONGO_URL:  mongoURL,
-		APP_SECRET: appSecret,
+		PORT:                port,
+		MONGO_URL:           mongoURL,
+		APP_SECRET:          appSecret,
+		PRODUCT_SERVICE_URL: productServiceURL,
 	}
 }

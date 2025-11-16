@@ -2,6 +2,9 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/sachinggsingh/e-comm/internal/api"
 	"github.com/sachinggsingh/e-comm/internal/config"
@@ -24,5 +27,21 @@ func main() {
 	userService := service.NewUserService(repo)
 	server.UserRoutes(userService)
 
-	server.StartServer()
+	// Start HTTP server in a goroutine
+	go func() {
+		if err := server.StartServer(); err != nil {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+
+	// Start gRPC server in a goroutine
+	go func() {
+		api.StartGRPC()
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+	log.Println("Shutting down servers")
 }
