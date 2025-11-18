@@ -11,10 +11,11 @@ WORKDIR /app/auth
 
 RUN go mod download
 
-RUN go build -o main ./cmd/server
-
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o main ./cmd/server
 
 FROM alpine:latest
+
+RUN apk add --no-cache ca-certificates
 
 WORKDIR /root/
 
