@@ -50,7 +50,9 @@ func (s *Server) GrpcServer() error {
 		log.Fatalf(" gRPC failed to listen on :9091: %v", err)
 	}
 	grpcServer := grpc.NewServer()
-	proto.RegisterGetProductsServer(grpcServer, grpc_handler.NewProductServer(s.db))
+	productServer := grpc_handler.NewProductServer(s.db)
+	proto.RegisterGetProductsServer(grpcServer, productServer)
+	proto.RegisterShowProductServer(grpcServer, productServer)
 
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf(" gRPC server failed to serve: %v", err)

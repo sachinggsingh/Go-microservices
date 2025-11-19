@@ -15,6 +15,7 @@ import (
 
 type ProductServer struct {
 	proto.UnimplementedGetProductsServer
+	proto.UnimplementedShowProductServer
 	database *db.Database
 }
 
@@ -62,4 +63,56 @@ func (p *ProductServer) GetProducts(ctx context.Context, req *proto.GetProductRe
 		Description: description,
 		Price:       price,
 	}, nil
+}
+
+func (p *ProductServer) ShowProduct(req *proto.ShowProductRequest, stream proto.ShowProduct_ShowProductServer) error {
+	// Validate request
+	if req.ProductId == "" {
+		return status.Errorf(codes.InvalidArgument, "product_id is required")
+	}
+
+	ctx := stream.Context()
+	cursor, err := p.database.ProductCollection.Find(ctx, bson.M{
+		"product_id": req.ProductId,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to query products: %v", err)
+	}
+	defer cursor.Close(ctx)
+
+	found := false
+	for cursor.Next(ctx) {
+		found = true
+		var product model.Product
+		if err := cursor.Decode(&product); err != nil {
+			return err
+		}
+		var name, description string
+		var price float64
+		if product.Name != nil {
+			name = *product.Name
+		}
+		if product.Description != nil {
+			description = *product.Description
+		}
+		if product.Price != nil {
+			price = *product.Price
+		}
+		res := &proto.ShowProductResponse{
+			Id:          product.ID.String(),
+			Name:        name,
+			Description: description,
+			Price:       price,
+		}
+		if err := stream.Send(res); err != nil {
+			return err
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return err
+	}
+	if !found {
+		return status.Errorf(codes.NotFound, "product with id %s not found", req.ProductId)
+	}
+	return nil
 }

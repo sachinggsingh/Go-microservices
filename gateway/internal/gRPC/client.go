@@ -9,16 +9,18 @@ import (
 type Clients struct {
 	AuthClient    proto.ValidateTokenClient
 	ProductClient proto.GetProductsClient
+	ShowProduct   proto.ShowProductClient
 }
 
-func NewClientWithConn(authConn *grpc.ClientConn, productConn *grpc.ClientConn) *Clients {
+func NewClientWithConn(authConn *grpc.ClientConn, productConn *grpc.ClientConn, showProductConn *grpc.ClientConn) *Clients {
 	return &Clients{
 		AuthClient:    proto.NewValidateTokenClient(authConn),
 		ProductClient: proto.NewGetProductsClient(productConn),
+		ShowProduct:   proto.NewShowProductClient(showProductConn),
 	}
 }
 
-func NewClient(authAddr string, productAddr string) (*Clients, error) {
+func NewClient(authAddr string, productAddr string, showProductAddr string) (*Clients, error) {
 	authConn, err := Dial(authAddr)
 	if err != nil {
 		return nil, err
@@ -29,11 +31,13 @@ func NewClient(authAddr string, productAddr string) (*Clients, error) {
 		return nil, err
 	}
 
-	return NewClientWithConn(authConn, productConn), nil
+	// ShowProduct is registered on the same gRPC server as GetProducts
+	// So we reuse the productConn instead of creating a separate connection
+	return NewClientWithConn(authConn, productConn, productConn), nil
 }
 
 func Dial(target string) (*grpc.ClientConn, error) {
-	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}

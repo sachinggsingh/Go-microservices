@@ -1,0 +1,21 @@
+syntax="proto3";
+
+package showProduct;
+
+option go_package = "./proto";
+
+service ShowProduct{
+    rpc ShowProduct(ShowProductRequest) returns (stream ShowProductResponse);
+}
+
+
+message ShowProductRequest{
+    string product_id = 1;
+}
+
+message ShowProductResponse{
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    double price = 4;
+}
