@@ -9,6 +9,7 @@ import (
 	"github.com/sachinggsingh/e-comm/internal/errors"
 	"github.com/sachinggsingh/e-comm/internal/model"
 	"github.com/sachinggsingh/e-comm/internal/pkg"
+	"github.com/sachinggsingh/e-comm/internal/pkg/payment"
 	"github.com/sachinggsingh/e-comm/internal/repository"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -351,4 +352,41 @@ func (c *CartService) ClearCart(userID string) error {
 		return errors.ErrInvalidUserID
 	}
 	return c.cartRepo.DeleteCart(userID)
+}
+
+// Calling the details through the gRPC client
+
+// PreparePaymentItems fetches product details for cart items and converts them to payment items
+// This method is used to prepare cart items with product details for Stripe payment
+func (c *CartService) PreparePaymentItems(ctx context.Context, cart *model.Cart) ([]payment.PaymentItem, error) {
+	if cart == nil {
+		return nil, fmt.Errorf("cart cannot be nil")
+	}
+	if len(cart.Items) == 0 {
+		return nil, fmt.Errorf("cart is empty")
+	}
+	if c.productClient == nil {
+		return nil, fmt.Errorf("product client not available")
+	}
+
+	paymentItems := make([]payment.PaymentItem, 0, len(cart.Items))
+
+	for _, item := range cart.Items {
+		// Fetch product details from product service
+		product, err := c.productClient.GetProduct(ctx, item.Product_id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch product %s: %w", item.Product_id, err)
+		}
+
+		// Create payment item with product details
+		paymentItem := payment.PaymentItem{
+			Name:        product.Name,
+			Description: product.Description,
+			Price:       product.Price,
+			Quantity:    int64(item.Quantity),
+		}
+		paymentItems = append(paymentItems, paymentItem)
+	}
+
+	return paymentItems, nil
 }

@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,11 +10,13 @@ import (
 	carterrors "github.com/sachinggsingh/e-comm/internal/errors"
 	"github.com/sachinggsingh/e-comm/internal/middleware"
 	"github.com/sachinggsingh/e-comm/internal/model"
+	"github.com/sachinggsingh/e-comm/internal/pkg/payment"
 	"github.com/sachinggsingh/e-comm/internal/service"
 )
 
 type CartHandler struct {
-	cartService *service.CartService
+	cartService   *service.CartService
+	paymentClient payment.PaymentClient
 }
 
 type CartItemRequest struct {
@@ -30,9 +33,10 @@ type UpdateCartRequest struct {
 	Items []CartItemRequest `json:"items"`
 }
 
-func NewCartHandler(cartService *service.CartService) *CartHandler {
+func NewCartHandler(cartService *service.CartService, paymentClient payment.PaymentClient) *CartHandler {
 	return &CartHandler{
-		cartService: cartService,
+		cartService:   cartService,
+		paymentClient: paymentClient,
 	}
 }
 
@@ -175,4 +179,54 @@ func (c *CartHandler) DeleteCart(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (c *CartHandler) CheckoutCart(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	if !ok {
+		http.Error(w, "user_id claim missing or invalid", http.StatusUnauthorized)
+		return
+	}
+
+	cart, err := c.cartService.FindCartByUserID(userID)
+	if err != nil {
+		if errors.Is(err, carterrors.ErrCartNotFound) {
+			http.Error(w, "cart not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, carterrors.ErrInvalidUserID) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if len(cart.Items) == 0 {
+		http.Error(w, "cart is empty", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+	paymentItems, err := c.cartService.PreparePaymentItems(ctx, cart)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to prepare payment items: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	session, err := c.paymentClient.CreatePayment(paymentItems, userID, cart.Cart_id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to create payment session: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]any{
+		"checkout_url": session.URL,
+		"session_id":   session.ID,
+		"cart_id":      cart.Cart_id,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }

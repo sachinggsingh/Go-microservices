@@ -7,6 +7,7 @@ import (
 	"github.com/sachinggsingh/e-comm/internal/config"
 	"github.com/sachinggsingh/e-comm/internal/intra/db"
 	"github.com/sachinggsingh/e-comm/internal/pkg"
+	"github.com/sachinggsingh/e-comm/internal/pkg/payment"
 	"github.com/sachinggsingh/e-comm/internal/repository"
 	"github.com/sachinggsingh/e-comm/internal/service"
 )
@@ -27,9 +28,16 @@ func main() {
 	}
 	defer productClient.Close()
 
+	// Initialize Stripe payment client
+	paymentClient := payment.NewPaymentClient(
+		env.STRIPE_SECRET_KEY,
+		env.STRIPE_SUCCESS_URL,
+		env.STRIPE_FAILURE_URL,
+	)
+
 	server := restapi.NewServer(env, database)
 	repo := repository.NewCartRepository(database)
 	cartService := service.NewCartService(repo, productClient)
-	server.CartRoute(cartService)
+	server.CartRoute(cartService, paymentClient)
 	server.StartServer()
 }

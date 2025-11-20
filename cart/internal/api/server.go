@@ -10,6 +10,7 @@ import (
 	"github.com/sachinggsingh/e-comm/internal/config"
 	"github.com/sachinggsingh/e-comm/internal/intra/db"
 	"github.com/sachinggsingh/e-comm/internal/middleware"
+	"github.com/sachinggsingh/e-comm/internal/pkg/payment"
 	"github.com/sachinggsingh/e-comm/internal/service"
 )
 
@@ -36,8 +37,8 @@ func (s *Server) StartServer() {
 	}
 }
 
-func (s *Server) CartRoute(cartservice *service.CartService) {
-	cartHandler := restapi.NewCartHandler(cartservice)
+func (s *Server) CartRoute(cartservice *service.CartService, paymentClient payment.PaymentClient) {
+	cartHandler := restapi.NewCartHandler(cartservice, paymentClient)
 
 	// Create cart - requires authentication
 	s.r.Handle("/cart", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.CreateCart))).Methods("POST")
@@ -50,4 +51,7 @@ func (s *Server) CartRoute(cartservice *service.CartService) {
 
 	// Delete cart - requires authentication
 	s.r.Handle("/cart/{user_id}", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.DeleteCart))).Methods("DELETE")
+
+	// Checkout cart - creates Stripe payment session - requires authentication
+	s.r.Handle("/cart/checkout", middleware.GetUserIdFromToken(http.HandlerFunc(cartHandler.CheckoutCart))).Methods("POST")
 }
