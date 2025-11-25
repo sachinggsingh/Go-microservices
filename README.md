@@ -372,8 +372,6 @@ Services communicate via **gRPC** for:
 
 ## 🛣️ Roadmap
 
-- [ ] Order Service implementation
-- [ ] Payment gateway integration
 - [ ] Redis caching layer
 - [ ] Message queue (RabbitMQ/Kafka)
 - [ ] Service mesh (Istio)
