@@ -27,6 +27,8 @@ This project implements a **microservices-based architecture** with the followin
 - ✅ Token validation and refresh
 - ✅ MongoDB user persistence
 - ✅ gRPC service for token validation
+- ✅ Redis-backed token caching and blacklist
+- ✅ Rate limiting (IP-based) using Redis
 
 ### Product Service (Port: 8081)
 - ✅ Product CRUD operations
@@ -151,6 +153,18 @@ MONGO_URI=mongodb://localhost:27017
 DB_NAME=ecommerce
 JWT_SECRET=your-secret-key-here
 PORT=8080
+
+# Redis configuration (used for token cache, blacklist and rate limiter)
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+# Rate limiting (defaults shown)
+# Maximum attempts before blocking
+RATE_LIMIT_MAX_ATTEMPTS=5
+# Window in minutes for counting attempts
+RATE_LIMIT_WINDOW_MINUTES=5
 ```
 
 **product/.env**

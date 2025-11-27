@@ -9,23 +9,28 @@ import (
 
 	grpc_handler "github.com/sachinggsingh/e-comm/internal/api/grpc"
 	"github.com/sachinggsingh/e-comm/internal/api/restapi"
+	cache "github.com/sachinggsingh/e-comm/internal/caches"
 	"github.com/sachinggsingh/e-comm/internal/config"
-	"github.com/sachinggsingh/e-comm/internal/helper"
 	"github.com/sachinggsingh/e-comm/internal/intra/db"
+	"github.com/sachinggsingh/e-comm/internal/middleware"
 	"github.com/sachinggsingh/e-comm/internal/service"
 	proto "github.com/sachinggsingh/e-comm/pb"
 	"google.golang.org/grpc"
 )
 
 type Server struct {
-	env *config.Env
-	db  *db.Database
+	env        *config.Env
+	db         *db.Database
+	redisCache *cache.RedisCache
 }
 
-func NewServer(env *config.Env, database *db.Database) *Server {
+// NewServer accepts an externally created RedisCache so the client is
+// created/closed by the caller (avoids duplicate connections).
+func NewServer(env *config.Env, database *db.Database, redisCache *cache.RedisCache) *Server {
 	return &Server{
-		env: env,
-		db:  database,
+		env:        env,
+		db:         database,
+		redisCache: redisCache,
 	}
 }
 
@@ -63,26 +68,23 @@ func StartGRPC() {
 }
 
 func (s *Server) UserRoutes(userService *service.UserService) {
+	// Create auth middleware
+	authMiddleware := &middleware.AuthMiddleware{Redis: s.redisCache}
+
+	// Public routes (no authentication required)
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		userHandler := restapi.NewUserHandler(userService)
+		userHandler := restapi.NewUserHandler(userService, s.redisCache, s.env)
 		userHandler.Register(w, r)
 	})
 	http.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		userHandler := restapi.NewUserHandler(userService)
+		userHandler := restapi.NewUserHandler(userService, s.redisCache, s.env)
 		userHandler.Login(w, r)
 	})
-	// http.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
-	// 	userHandler := restapi.NewUserHandler(userService)
-	// 	userHandler.Logout(w, r)
-	// })
 
-	http.HandleFunc("/profile", func(w http.ResponseWriter, r *http.Request) {
-		_, err := helper.Authorize(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
-		userHanlder := restapi.NewUserHandler(userService)
-		userHanlder.Profile(w, r)
-	})
+	// Protected routes (authentication required)
+	// Profile endpoint with caching middleware
+	http.Handle("/profile", authMiddleware.Validate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userHandler := restapi.NewUserHandler(userService, s.redisCache, s.env)
+		userHandler.Profile(w, r)
+	})))
 }

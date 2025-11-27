@@ -9,6 +9,7 @@ import (
 	"github.com/sachinggsingh/e-comm/internal/model"
 	"github.com/sachinggsingh/e-comm/internal/repository"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type UserService struct {
@@ -92,5 +93,15 @@ func (u *UserService) LoginUser(user *model.User) (*model.User, error) {
 // }
 
 func (u *UserService) Profile(user *model.User) (*model.User, error) {
-	return u.repo.Profile(user)
+	if user.Email == nil {
+		return nil, errors.New("email is not defined")
+	}
+	storedUser, err := u.repo.FindUserByEmail(*user.Email)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.New("user not found")
+		}
+		return nil, fmt.Errorf("failed to find user by email: %w", err)
+	}
+	return u.repo.Profile(storedUser)
 }

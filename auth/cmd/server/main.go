@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	cache "github.com/sachinggsingh/e-comm/internal/caches"
 	"github.com/sachinggsingh/e-comm/internal/api"
 	"github.com/sachinggsingh/e-comm/internal/config"
 	"github.com/sachinggsingh/e-comm/internal/intra/db"
@@ -15,13 +18,26 @@ import (
 
 func main() {
 	env := config.GetEnv()
-	database := db.NewDB()
-	server := api.NewServer(env, database)
 
+	// Initialize Redis for caching and rate limiting (single client)
+	redisClient := config.NewRedisClient(env)
+	redisCache := cache.NewRedisCache(redisClient)
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := redisClient.Close(); err != nil {
+			log.Printf("Error closing Redis client: %v", err)
+		}
+		_ = ctx // Context is used by cancel
+	}()
+
+	database := db.NewDB()
 	if err := database.Connect(); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 	defer database.Disconnect()
+
+	server := api.NewServer(env, database, redisCache)
 
 	repo := repository.NewUserRepository(database)
 	userService := service.NewUserService(repo)
@@ -35,13 +51,13 @@ func main() {
 	}()
 
 	// Start gRPC server in a goroutine
-	go func() {
-		api.StartGRPC()
-	}()
+	// go func() {
+	// 	api.StartGRPC()
+	// }()
 
 	// Wait for interrupt signal to gracefully shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
-	log.Println("Shutting down servers")
+	log.Println("Shutting down servers gracefully...")
 }
